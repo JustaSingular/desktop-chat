@@ -1,0 +1,52 @@
+{
+  "_comment": "Source sheets and the rect of every sprite cut from them, in native pixels. Run tools/export-sprites.ps1 after changing the art. Rects for panel furniture are taken from the composed panel frames rather than the loose components, so their positions are guaranteed to match the panel they sit in.",
+
+  "sheets": {
+    "tab": "art/Sprite-0002.png",
+    "panel": "art/Sprite-0003.png"
+  },
+
+  "panelFrameOrigin": { "x": 1, "y": 11 },
+
+  "sprites": [
+    { "name": "tab-rest",   "sheet": "tab",   "rect": [4, 17, 12, 32], "note": "light, arrow points inward" },
+    { "name": "tab-open",   "sheet": "tab",   "rect": [21, 17, 12, 32], "note": "dark, arrow points back out" },
+    { "name": "badge-a",    "sheet": "tab",   "rect": [40, 22, 6, 6], "note": "unread bubble, dark red" },
+    { "name": "badge-b",    "sheet": "tab",   "rect": [40, 31, 6, 6], "note": "unread bubble, bright red — alternates with badge-a" },
+
+    { "name": "panel",      "sheet": "panel", "rect": [320, 171, 85, 127], "note": "bare panel: frame + log well, no furniture" },
+
+    { "name": "bar-rest",   "sheet": "panel", "rect": [12, 20, 45, 10],  "note": "friend bar, from frame 0" },
+    { "name": "bar-active", "sheet": "panel", "rect": [105, 20, 45, 10], "note": "friend bar pressed, from frame 1" },
+
+    { "name": "style-rest",   "sheet": "panel", "rect": [66, 20, 9, 10],  "note": "style switcher button, from frame 0" },
+    { "name": "style-active", "sheet": "panel", "rect": [255, 20, 9, 10], "note": "style switcher pressed, from frame 2" },
+
+    { "name": "send-rest",   "sheet": "panel", "rect": [69, 117, 9, 11],  "note": "from frame 0" },
+    { "name": "send-active", "sheet": "panel", "rect": [443, 117, 9, 11], "note": "from frame 4" },
+
+    { "name": "input",       "sheet": "panel", "rect": [10, 120, 57, 8] },
+
+    { "name": "dropdown",        "sheet": "panel", "rect": [165, 179, 45, 49] },
+    { "name": "dropdown-rest",   "sheet": "panel", "rect": [6, 159, 45, 37] },
+    { "name": "dropdown-active", "sheet": "panel", "rect": [5, 204, 45, 37] },
+
+    { "name": "bubble",    "sheet": "panel", "rect": [235, 180, 64, 49], "note": "9-slice source for message bubbles" },
+    { "name": "bubble-sm", "sheet": "panel", "rect": [57, 228, 31, 7] },
+
+    { "name": "btn-rest",   "sheet": "panel", "rect": [56, 179, 7, 9] },
+    { "name": "btn-active", "sheet": "panel", "rect": [66, 181, 7, 7] }
+  ],
+
+  "_layout": {
+    "_comment": "Where each piece sits inside the 85x127 panel, in native pixels. src/panel-layout.js mirrors this; keep them in step.",
+    "panel": [0, 0, 85, 127],
+    "bar":   [11, 9, 45, 10],
+    "_barNote": "the friend-list dropdown trigger; its chevron is drawn into the sprite",
+    "style": [65, 9, 9, 10],
+    "log":   [7, 23, 71, 78],
+    "logInner": [8, 24, 69, 76],
+    "input": [9, 109, 57, 8],
+    "send":  [68, 106, 9, 11]
+  }
+}

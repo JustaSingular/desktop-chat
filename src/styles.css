@@ -1,0 +1,448 @@
+@import './fonts.css';
+
+/* Every sprite is referenced as var(--sp-NAME, url(...)). The fallback is the
+   art as drawn, so the default style needs no JavaScript and there is never a
+   flash of missing sprites; palette.js sets the variables only when a different
+   style is picked. */
+:root {
+  /* --u is one native sprite pixel. Everything on screen is a whole multiple
+     of it, which is what keeps the art and the layout locked together.
+     dock.js overwrites these per monitor; the values here are the 3x defaults
+     so the first paint is already correct. */
+  --u:         3px;
+  --zoom:      3;
+  --tab-w:     36px;
+  --tab-h:     96px;
+  --panel-w:   255px;
+  --panel-h:   381px;
+
+  /* Silkscreen is drawn on an 8px grid — only whole multiples stay crisp. */
+  --text-scale: 2;   /* bar, menus, input */
+  --log-scale:  1;   /* messages — 1 fits roughly twice the words per line */
+
+  --text:      #bfe9a8;
+  --text-dim:  #6f9c5c;
+  --ink:       #000000;
+  --danger:    #e5484d;
+
+  --ease:      cubic-bezier(.22, 1, .36, 1);
+  --slide:     260ms;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  font: 400 calc(8px * var(--text-scale))/1.4 'Silkscreen', 'Courier New', monospace;
+  color: var(--text);
+  background: transparent;          /* transparent for the Tauri window */
+  overflow: hidden;
+  user-select: none;
+  -webkit-font-smoothing: none;
+  text-rendering: geometricPrecision;
+}
+
+/* fake desktop, browser preview only */
+#browser-backdrop { display: none; }
+body.browser-preview #browser-backdrop {
+  display: block;
+  position: fixed;
+  inset: 0;
+  background: radial-gradient(120% 90% at 20% 10%, #2a3346 0%, #131722 60%, #0c0f16 100%);
+  z-index: 0;
+}
+
+/* Anything painted from a sprite shares these rules. */
+.sprite,
+.tab-frame,
+.panel,
+.friendbar,
+.stylebtn,
+.send,
+.add-btn,
+.drop,
+.msg-input {
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+
+/* ---------------- dock ---------------- */
+/* The dock box is the tab and nothing else, pinned to a screen edge. The panel
+   hangs off it absolutely, so opening and closing never moves the tab. */
+.dock {
+  position: fixed;
+  z-index: 10;
+  width: var(--tab-w);
+  height: var(--tab-h);
+  transition: top var(--slide) var(--ease);
+  will-change: top;
+}
+.dock[data-edge="right"] { right: 0; }
+.dock[data-edge="left"]  { left: 0; }
+.dock.grabbing { transition: none; }
+
+/* ---------------- tab ---------------- */
+.tab {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  cursor: grab;
+  background: none;
+  border: none;
+  touch-action: none;
+  transition: filter 140ms ease;
+}
+.tab:hover { filter: brightness(1.12); }
+.tab:active { filter: brightness(.94); }
+.dock.grabbing .tab { cursor: grabbing; }
+
+.tab-sprite {
+  position: relative;
+  display: block;
+  width: var(--tab-w);
+  height: var(--tab-h);
+}
+.tab-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+.tab-frame.rest { background-image: var(--sp-tab-rest, url('./sprites/tab-rest.png')); }
+.tab-frame.open { background-image: var(--sp-tab-open, url('./sprites/tab-open.png')); }
+
+/* Two frames, both drawn for the right edge: `rest` points inward, `open`
+   points back out. Which one shows is purely the open/closed state; mirroring
+   is purely which edge it is docked to. Pixel art does not tween, so this is a
+   hard cut rather than a transition. */
+.dock[data-state="collapsed"] .tab-frame.open,
+.dock[data-state="expanded"] .tab-frame.rest { visibility: hidden; }
+.dock[data-edge="left"] .tab-frame { transform: scaleX(-1); }
+
+/* The unread bubble is drawn art in two reds that alternate. Both frames are
+   stacked and the top one is blinked on and off — a hard cut, no fade. */
+.tab-badge {
+  position: absolute;
+  top: 0;
+  width: calc(6 * var(--u));
+  height: calc(6 * var(--u));
+  animation: pop 220ms var(--ease);
+  pointer-events: none;
+}
+.tab-badge[hidden] { display: none; }
+.dock[data-edge="right"] .tab-badge { left: calc(-4 * var(--u)); }
+.dock[data-edge="left"]  .tab-badge { right: calc(-4 * var(--u)); }
+
+.badge-frame {
+  position: absolute;
+  inset: 0;
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  -ms-interpolation-mode: nearest-neighbor;
+}
+.badge-frame.a { background-image: var(--sp-badge-a, url('./sprites/badge-a.png')); }
+.badge-frame.b {
+  background-image: var(--sp-badge-b, url('./sprites/badge-b.png'));
+  animation: badge-flicker 640ms steps(1, end) infinite;
+}
+@keyframes badge-flicker {
+  0%, 50%      { opacity: 0; }
+  50.01%, 100% { opacity: 1; }
+}
+@keyframes pop { from { transform: scale(.4); opacity: 0; } }
+
+/* A flashing red dot is exactly what this setting exists to stop. */
+@media (prefers-reduced-motion: reduce) {
+  .badge-frame.b { animation: none; opacity: 1; }
+  .tab-badge { animation: none; }
+}
+
+/* ---------------- panel ---------------- */
+/* Vertically centred on the tab, sitting just inboard of it. The sprite draws
+   the frame and the log well; everything else is positioned on top of it. */
+.panel {
+  position: absolute;
+  top: 50%;
+  width: var(--panel-w);
+  height: var(--panel-h);
+  background-image: var(--sp-panel, url('./sprites/panel.png'));
+  transition: transform var(--slide) var(--ease), opacity 180ms ease;
+  will-change: transform;
+}
+.dock[data-edge="right"] .panel { right: var(--tab-w); }
+.dock[data-edge="left"]  .panel { left: var(--tab-w); }
+
+.dock[data-state="expanded"] .panel { transform: translateY(-50%); opacity: 1; }
+
+/* Collapsed: slide the panel out past the screen edge — its own width plus the
+   tab it sits behind — and take it out of the hit test. */
+.dock[data-state="collapsed"] .panel { opacity: 0; pointer-events: none; }
+.dock[data-edge="right"][data-state="collapsed"] .panel {
+  transform: translateY(-50%) translateX(calc(var(--panel-w) + var(--tab-w)));
+}
+.dock[data-edge="left"][data-state="collapsed"] .panel {
+  transform: translateY(-50%) translateX(calc(-1 * (var(--panel-w) + var(--tab-w))));
+}
+
+.panel-body, .chat { position: absolute; inset: 0; }
+
+/* ---------------- furniture ----------------
+   Positions come from src/panel-layout.js, in native sprite pixels. */
+.friendbar, .stylebtn, .send, .add-btn {
+  position: absolute;
+  padding: 0;
+  border: none;
+  background-color: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+
+.friendbar {
+  left: calc(11 * var(--u));
+  top: calc(9 * var(--u));
+  width: calc(45 * var(--u));
+  height: calc(10 * var(--u));
+  background-image: var(--sp-bar-rest, url('./sprites/bar-rest.png'));
+  display: flex;
+  align-items: center;
+  /* leave the chevron drawn into the right end of the sprite uncovered */
+  padding: 0 calc(9 * var(--u)) calc(1 * var(--u)) calc(4 * var(--u));
+  text-align: left;
+}
+.friendbar[aria-expanded="true"],
+.friendbar:active {
+  background-image: var(--sp-bar-active, url('./sprites/bar-active.png'));
+}
+.friend-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.stylebtn {
+  left: calc(65 * var(--u));
+  top: calc(9 * var(--u));
+  width: calc(9 * var(--u));
+  height: calc(10 * var(--u));
+  background-image: var(--sp-style-rest, url('./sprites/style-rest.png'));
+}
+.stylebtn[aria-expanded="true"],
+.stylebtn:active {
+  background-image: var(--sp-style-active, url('./sprites/style-active.png'));
+}
+
+/* ---------------- log ---------------- */
+.log {
+  position: absolute;
+  left: calc(8 * var(--u));
+  top: calc(24 * var(--u));
+  width: calc(69 * var(--u));
+  height: calc(76 * var(--u));
+  overflow-y: auto;
+  overflow-x: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+  padding: calc(2 * var(--u));
+  font-size: calc(8px * var(--log-scale));
+}
+
+.msg { display: flex; max-width: 100%; }
+.msg.mine { justify-content: flex-end; }
+
+/* Nine-slice from the drawn bubble so it stretches to any message length
+   without the corners distorting. */
+.bubble {
+  max-width: 92%;
+  /* The drawn corner resolves in 6 native px, so that is the slice. Border
+     width must be exactly slice x --u or the corners scale by a fraction and
+     lose their pixels. The border is the visual inset, so no extra padding. */
+  padding: 0;
+  overflow-wrap: anywhere;
+  user-select: text;
+  border-style: solid;
+  border-width: calc(6 * var(--u));
+  border-image-source: var(--sp-bubble, url('./sprites/bubble.png'));
+  border-image-slice: 6 fill;
+  border-image-repeat: stretch;
+  image-rendering: pixelated;
+  color: var(--ink);
+}
+.msg.mine .bubble { filter: brightness(1.25); }
+.empty { margin: auto; color: var(--text-dim); }
+
+/* ---------------- composer ---------------- */
+.composer { display: contents; }
+
+.msg-input {
+  position: absolute;
+  left: calc(9 * var(--u));
+  top: calc(109 * var(--u));
+  width: calc(57 * var(--u));
+  height: calc(8 * var(--u));
+  padding: 0 calc(2 * var(--u));
+  border: none;
+  background-image: var(--sp-input, url('./sprites/input.png'));
+  color: var(--text);
+  font: inherit;
+  user-select: text;
+}
+.msg-input:focus { outline: none; }
+.msg-input::placeholder { color: var(--text-dim); }
+
+.send {
+  left: calc(68 * var(--u));
+  top: calc(106 * var(--u));
+  width: calc(9 * var(--u));
+  height: calc(11 * var(--u));
+  background-image: var(--sp-send-rest, url('./sprites/send-rest.png'));
+}
+.send:active { background-image: var(--sp-send-active, url('./sprites/send-active.png')); }
+
+/* ---------------- dropdowns ---------------- */
+.drop {
+  position: absolute;
+  z-index: 3;
+  width: calc(45 * var(--u));
+  height: calc(49 * var(--u));
+  top: calc(19 * var(--u));
+  padding: calc(4 * var(--u)) calc(3 * var(--u));
+  background-image: var(--sp-dropdown, url('./sprites/dropdown.png'));
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+}
+.drop[hidden] { display: none; }
+.friends-drop { left: calc(11 * var(--u)); }
+.styles-drop  { left: calc(29 * var(--u)); }
+
+.friend-list, .style-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  flex: 1;
+  min-height: 0;
+}
+
+.friend, .style-opt {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: calc(2 * var(--u));
+  /* no vertical padding: the dropdown sprite is a fixed 49 native px tall and
+     five rows have to fit inside it without scrolling */
+  padding: 0 calc(2 * var(--u));
+  line-height: 1.3;
+  font: inherit;
+  color: var(--text);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+}
+.friend:hover, .style-opt:hover { background: rgba(0, 0, 0, .28); }
+.friend.active, .style-opt.active { background: rgba(0, 0, 0, .45); }
+.fname, .sname { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.swatch {
+  width: calc(5 * var(--u));
+  height: calc(5 * var(--u));
+  border: var(--u) solid var(--ink);
+  flex: none;
+}
+
+.pill {
+  min-width: calc(5 * var(--u));
+  padding: 0 calc(1 * var(--u));
+  font-size: calc(4px * var(--zoom));
+  line-height: calc(5 * var(--u));
+  text-align: center;
+  color: #fff;
+  background: var(--danger);
+  flex: none;
+}
+
+.add-friend { display: flex; gap: calc(2 * var(--u)); align-items: center; }
+.code-input {
+  flex: 1;
+  min-width: 0;
+  height: calc(8 * var(--u));
+  padding: 0 calc(2 * var(--u));
+  border: none;
+  background-image: var(--sp-input, url('./sprites/input.png'));
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+  image-rendering: pixelated;
+  color: var(--text);
+  font: inherit;
+  user-select: text;
+}
+.code-input:focus { outline: none; }
+.code-input::placeholder { color: var(--text-dim); }
+
+.add-btn {
+  position: relative;
+  width: calc(7 * var(--u));
+  height: calc(9 * var(--u));
+  flex: none;
+  background-image: var(--sp-btn-rest, url('./sprites/btn-rest.png'));
+}
+.add-btn:active { background-image: var(--sp-btn-active, url('./sprites/btn-active.png')); }
+
+.add-error { color: #ff9b9b; font-size: calc(8px * 1); }
+
+.code-copy {
+  padding: 0;
+  font: inherit;
+  color: var(--text-dim);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.code-copy code { user-select: text; }
+.code-copy.copied { color: var(--text); }
+
+/* No scrollbars anywhere — a native one is the only thing on screen that is
+   not drawn, and at this size it ate real estate the panel cannot spare.
+   Scrolling itself is untouched: wheel, drag and keyboard all still work. */
+.log,
+.friend-list,
+.style-list {
+  scrollbar-width: none;        /* firefox */
+  -ms-overflow-style: none;     /* old edge */
+}
+.log::-webkit-scrollbar,
+.friend-list::-webkit-scrollbar,
+.style-list::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;                /* chromium, and the webview Tauri uses */
+}
+
+/* ---------------- failure state ---------------- */
+.fatal {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: calc(2 * var(--u));
+  align-items: center;
+  justify-content: center;
+  padding: calc(8 * var(--u));
+  text-align: center;
+  color: var(--text-dim);
+}
+.fatal strong { color: #ff9b9b; }

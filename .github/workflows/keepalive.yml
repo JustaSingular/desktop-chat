@@ -1,0 +1,70 @@
+# Stops Supabase pausing the project.
+#
+# Free projects are paused after 7 days with no activity, and a paused project
+# means the chat is down for everyone you sent it to. This reads one row from
+# the `keepalive` table (supabase/migrations/0002_keepalive.sql) to reset that
+# clock.
+#
+# Setup — Settings > Secrets and variables > Actions > New repository secret:
+#   SUPABASE_URL        https://<project-ref>.supabase.co   (no trailing slash)
+#   SUPABASE_ANON_KEY   the anon / publishable key, NOT service_role
+#
+# Then run it once by hand: Actions > keepalive > Run workflow.
+#
+# One caveat: GitHub disables scheduled workflows after 60 days with no commits
+# to the repo. It emails you first, and re-enabling is one click in the Actions
+# tab — but if this repo goes quiet for two months, check it is still on.
+
+name: keepalive
+
+on:
+  schedule:
+    # Daily. galleryApp uses '0 12 */5 * *', which is fine, but day-of-month
+    # steps restart each month: the 26th -> 1st gap is 6 days in a long month,
+    # leaving one day of margin against the 7-day deadline. Daily costs nothing
+    # and removes that reasoning entirely.
+    - cron: '0 12 * * *'
+  workflow_dispatch:        # so you can trigger it manually to test
+
+# Never let two runs overlap, and never queue one behind another.
+concurrency:
+  group: keepalive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Read one row from keepalive
+        env:
+          URL: ${{ secrets.SUPABASE_URL }}
+          KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -u
+          if [ -z "${URL}" ] || [ -z "${KEY}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_ANON_KEY repository secrets are not set."
+            exit 1
+          fi
+
+          # Three tries. A silent failure here is invisible until the project
+          # is already paused, so it is worth retrying rather than trusting a
+          # single request.
+          for i in 1 2 3; do
+            code=$(curl -sS -o body.txt -w '%{http_code}' \
+              -H "apikey: ${KEY}" \
+              -H "Authorization: Bearer ${KEY}" \
+              -H "Accept: application/json" \
+              "${URL%/}/rest/v1/keepalive?select=id&limit=1") || code=000
+
+            if [ "$code" = "200" ]; then
+              echo "ok $code $(cat body.txt)"
+              exit 0
+            fi
+
+            echo "attempt $i failed: HTTP $code $(cat body.txt 2>/dev/null)"
+            [ "$i" -lt 3 ] && sleep $((i * 5))
+          done
+
+          echo "::error::keepalive ping failed three times — is the project already paused?"
+          exit 1

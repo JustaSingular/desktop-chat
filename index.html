@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>desktop chat</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <!-- In the browser this sits on top of a fake desktop backdrop.
+         In Tauri the window itself is transparent and this is all there is. -->
+    <div id="browser-backdrop"></div>
+    <div id="dock" class="dock" data-edge="right" data-state="collapsed"></div>
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
