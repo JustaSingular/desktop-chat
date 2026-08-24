@@ -3,7 +3,8 @@
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
 
-const URL = 'http://localhost:5173/'
+// ?backend=mock keeps these geometry tests off the real database.
+const URL = 'http://localhost:5173/?backend=mock'
 const OUT = process.argv[2] ?? 'tools/screenshots'
 const VW = 1280, VH = 800
 

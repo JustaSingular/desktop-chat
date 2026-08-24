@@ -171,11 +171,55 @@ across and fitting words matters more there than matching the art's pixel size.
 - **Display names** default to `friend ABCD`. The column and its policy exist;
   there's no UI to change yours yet.
 
+## The desktop app
+
+    npm run app:dev        # runs it as a real window, hot-reloads like the browser
+    npm run app:build      # produces the installer
+
+The window is transparent, undecorated, always on top and kept out of the
+taskbar. `src/shell.js` resizes it to hug the visible art — just the tab when
+collapsed — so the rest of the screen stays clickable rather than being covered
+by an invisible full-screen window.
+
+There is no close button, so quitting is via the tray icon. A second launch
+focuses the running one instead of starting an invisible duplicate.
+
+The built installer lands in:
+
+    src-tauri/target/release/bundle/nsis/
+
+Two things in `src-tauri/tauri.conf.json` worth knowing, since JSON cannot carry
+comments and the schema rejects stray keys:
+
+- `app.security.csp` **names the Supabase project explicitly** in `connect-src`.
+  If the project ref ever changes, change it there too or the built app will
+  silently fail to reach the backend while working fine in the browser.
+- The window opens at 36x96 — the collapsed tab at 3x — and `dock.js` resizes it
+  as soon as it knows the real dpi. That initial size is only what shows for the
+  first frame.
+
+## Sending it to friends
+
+    git tag v0.1.0 && git push origin v0.1.0
+
+That triggers `.github/workflows/release.yml`, which builds the installer on a
+clean Windows runner and attaches it to a GitHub Release. Send them that link.
+Building on CI rather than locally means the release does not depend on your
+machine, and the workflow fails loudly if the backend config is missing rather
+than shipping an installer that silently falls back to the offline mock.
+
+What your friends see: Windows warns that the publisher is unrecognised, because
+the app is not code signed. **More info -> Run anyway**. Getting rid of that
+needs a code-signing certificate, which is a few hundred a year and almost
+certainly not worth it here.
+
+They need nothing else installed — WebView2 ships with Windows 11. On first
+launch the app creates its own anonymous account and shows them their friend
+code.
+
 ## Next step
 
-Wrap in Tauri v2 as a transparent, always-on-top, no-taskbar window. `src/shell.js`
-already contains the window-resizing logic so the rest of the screen stays
-clickable when the tab is collapsed. Needs the Rust toolchain:
-
-    winget install Rustlang.Rustup
-    winget install Microsoft.VisualStudio.2022.BuildTools --override "--wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
+Identity still lives in the webview's localStorage, so clearing site data loses
+the account and its friend code with no way to recover it. That is the main
+rough edge before this goes to people who will actually keep using it — an
+export/import of the account key would fix it.

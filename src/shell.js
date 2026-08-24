@@ -4,10 +4,6 @@
 
 const isTauri = typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
-// Kept in a variable so Vite does not try to resolve the Tauri package during a
-// browser-only build. It is only ever imported when actually running in Tauri.
-const WINDOW_API = '@tauri-apps/api/window'
-
 export const shell = {
   isTauri,
 
@@ -16,7 +12,7 @@ export const shell = {
     if (!isTauri) {
       return { x: 0, y: 0, width: window.innerWidth, height: window.innerHeight }
     }
-    const { currentMonitor } = await import(/* @vite-ignore */ WINDOW_API)
+    const { currentMonitor } = await import('@tauri-apps/api/window')
     const m = await currentMonitor()
     const s = m.scaleFactor
     return {
@@ -31,7 +27,7 @@ export const shell = {
   // Keeping the window tight means clicks pass through to whatever is behind it.
   async setBounds({ x, y, width, height }) {
     if (!isTauri) return
-    const { getCurrentWindow, LogicalPosition, LogicalSize } = await import(/* @vite-ignore */ WINDOW_API)
+    const { getCurrentWindow, LogicalPosition, LogicalSize } = await import('@tauri-apps/api/window')
     const w = getCurrentWindow()
     await w.setSize(new LogicalSize(width, height))
     await w.setPosition(new LogicalPosition(x, y))
@@ -39,7 +35,7 @@ export const shell = {
 
   async setAlwaysOnTop(on) {
     if (!isTauri) return
-    const { getCurrentWindow } = await import(/* @vite-ignore */ WINDOW_API)
+    const { getCurrentWindow } = await import('@tauri-apps/api/window')
     await getCurrentWindow().setAlwaysOnTop(on)
   },
 }

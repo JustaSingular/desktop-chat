@@ -112,22 +112,40 @@ export function createDock(root) {
     tab.setAttribute('aria-label', expanded ? 'Close chat' : 'Open chat')
   }
 
+  // The monitor's work area, in screen coordinates. Cached because dragging
+  // needs it on every pointer move and it only changes when the window moves
+  // between monitors.
+  let area = null
+  let syncing = false
+
+  async function refreshArea() {
+    try { area = await shell.workArea() } catch {}
+    return area
+  }
+
+  // Where the top of the tab sits on the screen, as opposed to inside the
+  // window. Under Tauri the window IS the tab, so these are different things.
+  function tabScreenTop(a) {
+    return a.y + clamp(yRatio, 0, 1) * Math.max(0, a.height - TAB_H)
+  }
+
   // Under Tauri the OS window is resized to hug the visible content, so the
   // rest of the screen stays clickable. In the browser this is a no-op.
   async function syncWindow() {
     if (!shell.isTauri) return
-    const area = await shell.workArea()
+    const a = area ?? (await refreshArea())
+    if (!a) return
     const width = expanded ? PANEL_W + TAB_W : TAB_W
     const height = expanded ? PANEL_H : TAB_H
-    const x = edge === 'right' ? area.x + area.width - width : area.x
+    const x = edge === 'right' ? a.x + a.width - width : a.x
 
     // Place the window so the tab lands where the user put it, then back off
     // the panel's overhang when it is open.
-    const tabY = area.y + clamp(yRatio, 0, 1) * Math.max(0, area.height - TAB_H)
+    const tabY = tabScreenTop(a)
     const y = clamp(
       expanded ? tabY - (PANEL_H - TAB_H) / 2 : tabY,
-      area.y,
-      area.y + Math.max(0, area.height - height)
+      a.y,
+      a.y + Math.max(0, a.height - height)
     )
     await shell.setBounds({ x: Math.round(x), y: Math.round(y), width, height })
   }
@@ -164,27 +182,59 @@ export function createDock(root) {
   tab.addEventListener('pointerdown', (e) => {
     if (e.button !== 0) return
     tab.setPointerCapture(e.pointerId)
-    drag = { startX: e.clientX, startY: e.clientY, moved: false, grabOffset: e.clientY - root.getBoundingClientRect().top }
     root.classList.add('grabbing')
+
+    // Under Tauri the window is only as big as the tab and moves with the
+    // pointer, so clientX/Y are measured against a 38x102 box that is sliding
+    // around underneath the cursor — the numbers are meaningless. screenX/Y are
+    // absolute and stay correct no matter where the window goes.
+    if (shell.isTauri) {
+      refreshArea()
+      drag = { screen: true, moved: false, startX: e.screenX, startY: e.screenY, grabDY: null }
+    } else {
+      drag = {
+        screen: false, moved: false,
+        startX: e.clientX, startY: e.clientY,
+        grabOffset: e.clientY - root.getBoundingClientRect().top,
+      }
+    }
   })
 
   tab.addEventListener('pointermove', (e) => {
     if (!drag) return
-    const dx = e.clientX - drag.startX
-    const dy = e.clientY - drag.startY
-    if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return
+    const px = drag.screen ? e.screenX : e.clientX
+    const py = drag.screen ? e.screenY : e.clientY
+    if (!drag.moved && Math.hypot(px - drag.startX, py - drag.startY) < DRAG_THRESHOLD) return
     drag.moved = true
 
-    // vertical: follow the pointer
+    if (drag.screen) {
+      if (!area) return                       // work area not known yet
+      // Measured on first real movement so the tab keeps the same grip point.
+      if (drag.grabDY === null) drag.grabDY = drag.startY - tabScreenTop(area)
+
+      const maxTop = Math.max(1, area.height - TAB_H)
+      yRatio = clamp((py - drag.grabDY - area.y) / maxTop, 0, 1)
+      edge = px < area.x + area.width / 2 ? 'left' : 'right'
+
+      layout()
+      liveMove()
+      return
+    }
+
+    // Browser: the page is the screen, so viewport coordinates are correct.
     const maxTop = Math.max(1, window.innerHeight - TAB_H)
-    yRatio = clamp((e.clientY - drag.grabOffset) / maxTop, 0, 1)
-
-    // horizontal: snap to whichever half of the screen the pointer is in
-    const nextEdge = e.clientX < window.innerWidth / 2 ? 'left' : 'right'
-    if (nextEdge !== edge) edge = nextEdge
-
+    yRatio = clamp((py - drag.grabOffset) / maxTop, 0, 1)
+    edge = px < window.innerWidth / 2 ? 'left' : 'right'
     layout()
   })
+
+  // Move the OS window as the drag happens, without queueing a request per
+  // pointer event.
+  function liveMove() {
+    if (syncing) return
+    syncing = true
+    syncWindow().finally(() => { syncing = false })
+  }
 
   const endDrag = (e) => {
     if (!drag) return
@@ -205,11 +255,12 @@ export function createDock(root) {
   // integer scale the sprite needs.
   window.addEventListener('resize', () => {
     applySizeVars()
+    refreshArea().then(syncWindow)
     layout()
   })
 
   layout()
-  syncWindow()
+  refreshArea().then(syncWindow)
   return api
 }
 

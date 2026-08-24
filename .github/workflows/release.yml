@@ -1,0 +1,80 @@
+# Builds the Windows installer and attaches it to a GitHub Release.
+#
+#   git tag v0.1.0 && git push origin v0.1.0
+#
+# ...then send your friends the link from the Releases page. You can also run it
+# by hand from the Actions tab to get an installer without cutting a tag.
+#
+# Needs the same two secrets as keepalive.yml. They are baked into the app at
+# build time — the anon key is public by design and is safe to ship, but this is
+# why the build has to happen somewhere that has them.
+
+name: release
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write        # to create the release and upload the installer
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      # Rust builds are slow from cold; this makes repeat runs minutes faster.
+      - uses: swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - run: npm ci
+
+      - name: Check the frontend builds
+        run: npm run build
+        env:
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+
+      - name: Fail early if the backend config is missing
+        shell: bash
+        run: |
+          # An installer built without these silently falls back to the offline
+          # mock backend, which looks like a working app until someone tries to
+          # add a friend.
+          if [ -z "${{ secrets.SUPABASE_URL }}" ] || [ -z "${{ secrets.SUPABASE_ANON_KEY }}" ]; then
+            echo "::error::SUPABASE_URL / SUPABASE_ANON_KEY are not set. The build would ship the mock backend."
+            exit 1
+          fi
+          grep -q "supabase.co" dist/assets/*.js || {
+            echo "::error::built bundle has no supabase url in it — check the env vars"
+            exit 1
+          }
+          echo "backend config is baked in"
+
+      - uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VITE_SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          VITE_SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        with:
+          tagName: ${{ github.ref_type == 'tag' && github.ref_name || format('v0.0.0-dev-{0}', github.run_number) }}
+          releaseName: desktop chat ${{ github.ref_type == 'tag' && github.ref_name || 'dev build' }}
+          releaseBody: |
+            Windows installer below.
+
+            Windows will warn that the publisher is unrecognised — the app is not
+            code signed. Click **More info**, then **Run anyway**.
+          releaseDraft: false
+          prerelease: ${{ github.ref_type != 'tag' }}
