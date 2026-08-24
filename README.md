@@ -8,12 +8,15 @@ a friend you added by friend code.
     npm install
     npm run dev      # http://localhost:5173
 
-With no Supabase key configured it runs on a **local mock backend** (localStorage),
-so the whole UI works with no server. Seeded with two fake friends; "Echo Bot"
-replies to anything you send. In the browser console:
+With no Supabase key configured it runs on a **local mock backend**
+(localStorage), so the whole UI works with no server. It starts empty — no fake
+friends — because inventing them made it easy to mistake for a working
+connection. Add `?backend=mock` to force it even when a key is set. In the
+browser console:
 
-    backend._receive('sam', 'hello')     // red badge appears on the tab
-    backend.reset()                      // wipe local state
+    await backend.addFriend('AAAA-1111')       // any well-formed code works
+    backend._receive('<friend id>', 'hello')   // fakes an inbound message
+    backend.reset()                            // wipe local state
 
 ## Connecting the real backend
 
@@ -45,8 +48,19 @@ never enter this project.
 It applies the migration twice (idempotency) and asserts the security model:
 strangers can't read profiles, friendships, or messages; you can't message a
 non-friend or forge a sender; message bodies are immutable once sent; friend
-codes can't be changed; unread counts follow `read_at`; the `anon` role is
-locked out entirely. All ten currently pass.
+codes can't be changed; unread counts follow `read_at`; and `anon` is locked out
+of every table except `keepalive`, which it may read and only read. All eleven
+currently pass.
+
+## Checking the backend
+
+    node tools/check-backend.mjs      # which backend is live, and why
+    node tools/check-roundtrip.mjs    # two accounts, add by code, realtime delivery
+
+The first distinguishes the three things that go wrong when wiring Supabase up:
+key missing, migration not run, anonymous sign-ins off. The second drives two
+isolated browsers through a real conversation and writes real rows — it prints
+the cleanup SQL when it finishes.
 
 ## Verifying the UI
 
@@ -58,7 +72,8 @@ Drives a real browser and asserts the dock geometry: the tab is flush to the
 screen edge and stays there when the panel opens, the panel parks off screen
 when closed and is fully on screen when open, the sprite renders `pixelated`,
 the correct frame shows per state, dragging snaps to the opposite edge, and
-nothing throws. Screenshots land in `tools/screenshots/`.
+nothing throws, and scrolling works with the scrollbars hidden. Screenshots
+land in `tools/screenshots/` (gitignored).
 
 Worth keeping: the tab once vanished one frame after load because a CSS rule
 used `var(--panel-w)` before JS had defined it, so the rule was dropped on the
@@ -136,6 +151,7 @@ Other sheet tools, all of which take any sheet:
     tools/map-frame.ps1          print a region as an ascii colour map
     tools/diff-frames.ps1        what differs between same-size frames
     tools/contact-sheet.ps1      labelled grid of crops, scaled up
+    tools/panel-freespace.ps1    which pixels of the panel body the UI covers
 
 ## Styles
 
